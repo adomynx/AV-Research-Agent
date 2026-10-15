@@ -1,12 +1,11 @@
 import streamlit as st
 import os
-import time
 from datetime import datetime
-from agents.triage import TriageAgent
-from agents.researcher import ResearchAgent
-from agents.editor import EditorAgent
+from agents.graph import run_research
 from utils.pdf_loader import load_pdf_documents
 from utils.rag_engine import RAGEngine
+from utils.observability import track_run, enable_langsmith
+from utils.llm import has_llm_credentials, provider_label
 
 st.set_page_config(
     page_title="AV Research Agent",
@@ -78,12 +77,27 @@ if "uploaded_docs" not in st.session_state:
 # --- Sidebar ---
 with st.sidebar:
     st.markdown("### ⚙️ Configuration")
-    
-    api_key = st.text_input("OpenAI API Key", type="password", help="Required for LLM agents")
-    
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    
+
+    provider = st.radio(
+        "LLM Provider",
+        options=["OpenAI", "Anthropic (Claude)"],
+        help="Pick the model provider. The pipeline is provider-agnostic.",
+    )
+    os.environ["LLM_PROVIDER"] = "anthropic" if provider.startswith("Anthropic") else "openai"
+
+    if os.environ["LLM_PROVIDER"] == "anthropic":
+        api_key = st.text_input("Anthropic API Key", type="password",
+                                 help="sk-ant-... from console.anthropic.com")
+        if api_key:
+            os.environ["ANTHROPIC_API_KEY"] = api_key
+    else:
+        api_key = st.text_input("OpenAI API Key", type="password",
+                                help="sk-... from platform.openai.com")
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+
+    st.caption("📎 Embeddings run locally (free) by default — RAG needs no API key.")
+
     st.markdown("---")
     st.markdown("### 📄 Upload Research Papers")
     uploaded_files = st.file_uploader(
@@ -92,12 +106,12 @@ with st.sidebar:
         accept_multiple_files=True,
         help="Upload AV/perception papers for deeper context"
     )
-    
+
     if uploaded_files:
         with st.spinner("Processing PDFs..."):
             docs = load_pdf_documents(uploaded_files)
             st.session_state.uploaded_docs = docs
-            st.session_state.rag_engine = RAGEngine(docs, api_key)
+            st.session_state.rag_engine = RAGEngine(docs)
             st.success(f"✅ {len(uploaded_files)} paper(s) indexed")
     
     st.markdown("---")
@@ -172,8 +186,8 @@ with col_btn2:
 
 # --- Research Pipeline ---
 if start_research and research_topic:
-    if not api_key:
-        st.error("⚠️ Please enter your OpenAI API key in the sidebar.")
+    if not has_llm_credentials():
+        st.error("⚠️ Please enter your API key for the selected provider in the sidebar.")
         st.stop()
     
     st.session_state.research_log = []
@@ -182,85 +196,76 @@ if start_research and research_topic:
     tab_process, tab_report = st.tabs(["📊 Research Process", "📄 Report"])
     
     with tab_process:
-        # --- Phase 1: Triage ---
-        st.markdown("### Phase 1: Research Planning")
-        with st.spinner("🎯 Triage Agent analyzing topic..."):
-            triage = TriageAgent(api_key)
-            sub_queries = triage.decompose(research_topic)
-            st.session_state.research_log.append({
-                "agent": "Triage",
-                "action": "Decomposed topic into sub-queries",
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            })
-        
-        st.success(f"✅ Generated {len(sub_queries)} research sub-queries")
-        for i, query in enumerate(sub_queries, 1):
-            st.markdown(f"""<div class="fact-card">
-                <strong>Sub-query {i}:</strong> {query}
-            </div>""", unsafe_allow_html=True)
-        
-        # --- Phase 2: Research ---
-        st.markdown("### Phase 2: Information Gathering")
-        all_facts = []
-        
-        progress_bar = st.progress(0)
+        st.markdown("### 🧠 Agentic Research Graph")
+        st.caption("Plan → Research → Reflect ↺ → Compile — the Reflect step loops back to Research when it finds evidence gaps.")
+
         status_text = st.empty()
-        
-        researcher = ResearchAgent(api_key, rag_engine=st.session_state.rag_engine)
-        
-        for i, query in enumerate(sub_queries):
-            status_text.markdown(f'<p class="status-running">🔍 Researching: {query}</p>', unsafe_allow_html=True)
-            
-            facts = researcher.research(query, research_topic)
-            all_facts.extend(facts)
-            
-            st.session_state.research_log.append({
-                "agent": "Researcher",
-                "action": f"Found {len(facts)} facts for: {query}",
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            })
-            
-            progress_bar.progress((i + 1) / len(sub_queries))
-            time.sleep(0.3)
-        
-        status_text.markdown(f'<p class="status-complete">✅ Collected {len(all_facts)} facts total</p>', unsafe_allow_html=True)
-        
+
+        def on_event(msg: str):
+            status_text.markdown(f'<p class="status-running">{msg}</p>', unsafe_allow_html=True)
+
+        with st.spinner("Running agentic research pipeline..."):
+            with track_run("research_graph") as run_stats:
+                final_state = run_research(
+                    research_topic,
+                    rag_engine=st.session_state.rag_engine,
+                    max_iterations=2,
+                    on_event=on_event,
+                )
+
+        run_tokens = run_stats.total_tokens
+        run_cost_usd = run_stats.total_cost_usd
+        sub_queries = final_state.get("all_queries", [])
+        all_facts = final_state.get("facts", [])
+        iterations = final_state.get("iteration", 0)
+        decision_log = final_state.get("log", [])
+
+        st.session_state.research_results = final_state.get("report", "")
+        st.session_state.research_log = [
+            {"agent": "Graph", "action": line, "timestamp": datetime.now().strftime("%H:%M:%S")}
+            for line in decision_log
+        ]
+
+        status_text.markdown('<p class="status-complete">✅ Research complete!</p>', unsafe_allow_html=True)
+
+        # --- Decision trace (this is the visible "agency") ---
+        st.markdown("#### 🔁 Agent Decision Trace")
+        for line in decision_log:
+            st.markdown(f"- {line}")
+
+        with st.expander(f"🧭 Queries executed ({len(sub_queries)})", expanded=False):
+            for i, query in enumerate(sub_queries, 1):
+                st.markdown(f"""<div class="fact-card"><strong>Query {i}:</strong> {query}</div>""",
+                            unsafe_allow_html=True)
+
         with st.expander(f"📋 All Collected Facts ({len(all_facts)})", expanded=False):
             for fact in all_facts:
                 st.markdown(f"""<div class="fact-card">
-                    <strong>{fact['title']}</strong><br>
-                    {fact['content']}<br>
-                    <small>Source: {fact['source']}</small>
+                    <strong>{fact.title}</strong> <em>({fact.relevance.value})</em><br>
+                    {fact.content}<br>
+                    <small>Source: {fact.source}</small>
                 </div>""", unsafe_allow_html=True)
-        
-        # --- Phase 3: Report Generation ---
-        st.markdown("### Phase 3: Report Compilation")
-        with st.spinner("📝 Editor Agent compiling report..."):
-            editor = EditorAgent(api_key)
-            report = editor.compile_report(research_topic, all_facts)
-            
-            st.session_state.research_results = report
-            st.session_state.research_log.append({
-                "agent": "Editor",
-                "action": "Compiled final research report",
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            })
-        
-        st.success("✅ Research complete!")
-        
+
         # --- Metrics ---
         st.markdown("### 📊 Research Metrics")
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
         with m1:
-            st.metric("Sub-queries", len(sub_queries))
+            st.metric("Research Rounds", iterations)
         with m2:
-            st.metric("Facts Collected", len(all_facts))
+            st.metric("Queries", len(sub_queries))
         with m3:
-            st.metric("Sources", len(set(f['source'] for f in all_facts)))
+            st.metric("Facts", len(all_facts))
         with m4:
-            rag_status = "Active" if st.session_state.rag_engine else "Inactive"
-            st.metric("RAG Status", rag_status)
-        
+            st.metric("Sources", len({f.source for f in all_facts}))
+        with m5:
+            st.metric("Tokens", f"{run_tokens:,}")
+        with m6:
+            st.metric("Est. Cost", f"${run_cost_usd:.4f}")
+
+        rag_badge = "🟢 RAG active" if st.session_state.rag_engine else "⚪ RAG inactive"
+        trace_badge = "🟢 LangSmith tracing on" if enable_langsmith() else "⚪ LangSmith off"
+        st.caption(f"🧩 {provider_label()}  ·  {rag_badge}  ·  {trace_badge}")
+
         # --- Activity Log ---
         with st.expander("📜 Agent Activity Log"):
             for log in st.session_state.research_log:

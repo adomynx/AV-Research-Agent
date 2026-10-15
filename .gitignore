@@ -8,3 +8,9 @@ dist/
 build/
 .streamlit/
 *.pdf
+
+# Generated eval scorecards (regenerate with: python -m evals.run_eval)
+evals/results/
+
+# Local embedding model cache
+.fastembed_cache/
