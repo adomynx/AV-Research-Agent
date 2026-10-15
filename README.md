@@ -1,5 +1,7 @@
 # 🚗 AV Research Agent
 
+![CI](https://github.com/adomynx/AV-Research-Agent/actions/workflows/ci.yml/badge.svg)
+
 A multi-agent research pipeline built with **LangChain** and **Streamlit** for automated literature review and technical analysis in autonomous driving and perception systems.
 
 ## Overview
@@ -207,6 +209,16 @@ python -m evals.benchmark --combos anthropic:claude-haiku-5-5 openai:gpt-4o-mini
 
 Each combo runs the live eval and the scores are tabulated side by side. (Each
 combo spends API credits for its provider.)
+
+## Testing & CI
+
+```bash
+pytest          # unit tests for metrics, schemas, provider utils, dataset
+ruff check .    # lint
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs lint + tests + the offline
+(deterministic, no-API-key) eval on every push and PR.
 
 ## REST API
 

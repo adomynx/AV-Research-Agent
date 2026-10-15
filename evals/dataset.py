@@ -143,4 +143,199 @@ DATASET: list[EvalCase] = [
         ],
         reference_report=_ODD_REPORT,
     ),
+    EvalCase(
+        case_id="lidar_camera_fusion",
+        topic="LiDAR-camera fusion architectures for AV perception",
+        sub_queries=[
+            "Query/attention-based fusion (TransFusion) vs BEV-level fusion",
+            "nuScenes accuracy of camera-LiDAR fusion detectors",
+            "Robustness of fusion to sensor/modality dropout",
+        ],
+        facts=[
+            Fact(title="TransFusion attention fusion",
+                 content="TransFusion uses a transformer decoder to fuse LiDAR BEV features with image features via cross-attention.",
+                 source="TransFusion paper", relevance=Relevance.HIGH),
+            Fact(title="Fusion nuScenes gain",
+                 content="Camera-LiDAR fusion detectors improve nuScenes NDS over LiDAR-only baselines.",
+                 source="nuScenes", relevance=Relevance.HIGH),
+            Fact(title="Modality dropout robustness",
+                 content="DeepFusion-style methods degrade gracefully when one modality is missing or corrupted.",
+                 source="DeepFusion paper", relevance=Relevance.MEDIUM),
+        ],
+        reference_report="""# LiDAR-Camera Fusion Architectures for AV Perception
+
+## Executive Summary
+Camera-LiDAR fusion combines geometric precision with semantic richness, with
+query/attention designs like TransFusion leading recent benchmarks [TransFusion paper].
+
+## Key Findings
+- TransFusion fuses modalities via cross-attention in a transformer decoder [TransFusion paper].
+- Fusion improves nuScenes NDS over LiDAR-only baselines [nuScenes].
+- Attention fusion degrades gracefully under modality dropout [DeepFusion paper].
+
+## Challenges & Limitations
+Fusion adds calibration and compute cost; sensitivity to cross-sensor misalignment remains.
+
+## Conclusion & Outlook
+Attention-based fusion is the current direction; robustness under corruption is the open frontier.
+
+## Sources
+1. TransFusion paper
+2. nuScenes
+3. DeepFusion paper
+""",
+    ),
+    EvalCase(
+        case_id="transformer_perception",
+        topic="Transformer architectures in autonomous driving perception",
+        sub_queries=[
+            "DETR3D query-based 3D detection approach",
+            "RT-DETR real-time detection trade-offs",
+            "Transformer vs CNN detector accuracy on AV datasets",
+        ],
+        facts=[
+            Fact(title="DETR3D queries",
+                 content="DETR3D uses 3D object queries that sample multi-view image features without dense BEV construction.",
+                 source="DETR3D paper", relevance=Relevance.HIGH),
+            Fact(title="RT-DETR real-time",
+                 content="RT-DETR removes NMS and achieves real-time detection with competitive accuracy.",
+                 source="RT-DETR paper", relevance=Relevance.HIGH),
+        ],
+        reference_report="""# Transformer Architectures in AV Perception
+
+## Executive Summary
+Transformer detectors replace hand-tuned anchors and NMS with learned queries,
+with DETR3D and RT-DETR representing 3D and real-time variants [DETR3D paper].
+
+## Key Findings
+- DETR3D samples multi-view features with 3D object queries, avoiding dense BEV [DETR3D paper].
+- RT-DETR removes NMS for real-time, competitive detection [RT-DETR paper].
+
+## Challenges & Limitations
+Transformer detectors can be data- and compute-hungry and slower to converge.
+
+## Conclusion & Outlook
+Query-based detection is maturing toward real-time AV deployment.
+
+## Sources
+1. DETR3D paper
+2. RT-DETR paper
+""",
+    ),
+    EvalCase(
+        case_id="edge_deployment",
+        topic="Real-time object detection on edge devices for robotics",
+        sub_queries=[
+            "TensorRT INT8 quantization accuracy/latency trade-offs",
+            "Jetson throughput for detection models",
+            "YOLO-family suitability for embedded inference",
+        ],
+        facts=[
+            Fact(title="TensorRT INT8",
+                 content="TensorRT INT8 quantization reduces latency with a small accuracy drop versus FP16.",
+                 source="NVIDIA TensorRT docs", relevance=Relevance.HIGH),
+            Fact(title="Jetson throughput",
+                 content="Jetson-class GPUs run compact detectors in real time at tens of FPS.",
+                 source="Jetson benchmark", relevance=Relevance.MEDIUM),
+            Fact(title="YOLO efficiency",
+                 content="YOLO-family single-stage detectors favour embedded real-time inference.",
+                 source="YOLO paper", relevance=Relevance.HIGH),
+        ],
+        reference_report="""# Real-Time Detection on Edge Devices
+
+## Executive Summary
+Edge detection balances accuracy against tight latency and power budgets, using
+quantization and efficient single-stage detectors [NVIDIA TensorRT docs].
+
+## Key Findings
+- TensorRT INT8 cuts latency with a small accuracy drop vs FP16 [NVIDIA TensorRT docs].
+- Jetson-class GPUs run compact detectors at tens of FPS [Jetson benchmark].
+- YOLO-family detectors favour embedded real-time inference [YOLO paper].
+
+## Challenges & Limitations
+Quantization can hurt small-object accuracy; thermal and power limits constrain throughput.
+
+## Conclusion & Outlook
+INT8 single-stage detectors are the practical default for robotics edge perception.
+
+## Sources
+1. NVIDIA TensorRT docs
+2. Jetson benchmark
+3. YOLO paper
+""",
+    ),
+    EvalCase(
+        case_id="sotif_validation",
+        topic="Safety validation methods for AV perception systems",
+        sub_queries=[
+            "SOTIF (ISO 21448) approach to perception safety",
+            "Scenario-based validation and coverage",
+            "Operational experience from AV safety reports",
+        ],
+        facts=[
+            Fact(title="SOTIF scope",
+                 content="ISO 21448 (SOTIF) addresses hazards from functional insufficiencies without a component fault.",
+                 source="ISO 21448", relevance=Relevance.HIGH),
+            Fact(title="Scenario coverage",
+                 content="Scenario-based testing targets known and edge-case conditions to bound residual risk.",
+                 source="SOTIF survey", relevance=Relevance.MEDIUM),
+        ],
+        reference_report="""# Safety Validation Methods for AV Perception
+
+## Executive Summary
+Perception safety relies on SOTIF (ISO 21448) to manage functional insufficiencies,
+combined with scenario-based validation [ISO 21448].
+
+## Key Findings
+- SOTIF addresses hazards from insufficiencies without a component fault [ISO 21448].
+- Scenario-based testing bounds residual risk across edge cases [SOTIF survey].
+
+## Challenges & Limitations
+Completeness of the scenario space is unprovable; rare long-tail events dominate residual risk.
+
+## Conclusion & Outlook
+SOTIF plus scenario coverage and field monitoring is the accepted validation backbone.
+
+## Sources
+1. ISO 21448
+2. SOTIF survey
+""",
+    ),
+    EvalCase(
+        case_id="radar_camera_fusion",
+        topic="Radar-camera fusion for robust AV perception",
+        sub_queries=[
+            "Radar-camera association and fusion methods",
+            "Radar advantages in adverse weather",
+            "nuScenes radar fusion benchmark results",
+        ],
+        facts=[
+            Fact(title="CRAFT association",
+                 content="CRAFT performs radar-camera cross-attention to associate sparse radar points with image regions.",
+                 source="CRAFT paper", relevance=Relevance.HIGH),
+            Fact(title="Radar weather robustness",
+                 content="Radar is robust to rain, fog, and low light where cameras degrade.",
+                 source="radar survey", relevance=Relevance.HIGH),
+        ],
+        reference_report="""# Radar-Camera Fusion for Robust AV Perception
+
+## Executive Summary
+Radar-camera fusion adds all-weather robustness to semantic cameras, with
+cross-attention association methods like CRAFT [CRAFT paper].
+
+## Key Findings
+- CRAFT associates sparse radar points with image regions via cross-attention [CRAFT paper].
+- Radar stays robust in rain, fog, and low light where cameras degrade [radar survey].
+
+## Challenges & Limitations
+Radar sparsity and angular resolution limit fine localization; association remains hard.
+
+## Conclusion & Outlook
+Radar-camera fusion is key to all-weather perception; richer 4D radar is a promising direction.
+
+## Sources
+1. CRAFT paper
+2. radar survey
+""",
+    ),
 ]
