@@ -1,0 +1,23 @@
+# Render Blueprint — one-click deploy of the Streamlit app to a live URL.
+# In Render: New + → Blueprint → connect this repo. Set the secret env vars
+# (ANTHROPIC_API_KEY, optionally TAVILY_API_KEY) in the dashboard.
+services:
+  - type: web
+    name: av-research-agent
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-5-5
+      - key: EMBEDDINGS_PROVIDER
+        value: local
+      - key: ANTHROPIC_API_KEY
+        sync: false   # set in the Render dashboard (secret)
+      - key: TAVILY_API_KEY
+        sync: false   # optional: keyed web search

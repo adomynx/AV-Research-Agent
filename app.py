@@ -10,6 +10,7 @@ from utils.pdf_loader import load_pdf_documents
 from utils.rag_engine import RAGEngine
 from utils.observability import track_run, enable_langsmith
 from utils.llm import has_llm_credentials, provider_label
+from utils.web_search import search_backend
 
 st.set_page_config(
     page_title="AV Research Agent",
@@ -258,6 +259,7 @@ st.markdown(f"""
         {_chip("🧠 LangGraph · reflection loop")}
         {_chip("🔀 Hybrid RAG + rerank")}
         {_chip("🧩 " + provider_label())}
+        {_chip("🌐 " + search_backend())}
         {_chip(rag_chip)}
         {_chip(trace_chip)}
     </div>

@@ -5,7 +5,7 @@ from evals.metrics import deterministic_metrics
 
 
 def test_dataset_has_enough_cases():
-    assert len(DATASET) >= 6, "eval set should be large enough to be meaningful"
+    assert len(DATASET) >= 15, "eval set should be large enough to be meaningful"
 
 
 def test_case_ids_are_unique():
