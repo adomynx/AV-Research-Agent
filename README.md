@@ -32,7 +32,7 @@ whether to loop back and dig deeper — so the path depends on the topic.
 | Node | Agent | Role |
 |------|-------|------|
 | `plan` | 🎯 Triage | Decomposes the topic into 4-6 focused sub-queries |
-| `research` | 🔍 Research | Web search (DuckDuckGo) + RAG (FAISS); extracts typed facts with sources |
+| `research` | 🔍 Research | Robust web search (ddgs) + hybrid RAG (BM25+dense, reranked); extracts typed facts with sources |
 | `reflect` | 🤔 Reflection | Judges evidence coverage; emits targeted follow-up queries on gaps (bounded loop) |
 | `compile` | 📝 Editor | Compiles facts into a cited, structured report |
 
@@ -43,6 +43,7 @@ remain and `iteration < max_iterations`, guaranteeing termination.
 
 - **Agentic Graph (LangGraph)**: Plan → Research → **Reflect ↺** → Compile, with a bounded reflection loop that adaptively digs deeper when evidence is thin — real agency, not a fixed chain
 - **Provider-Agnostic**: Swap OpenAI ↔ Anthropic (Claude) with one env var — benchmark GPT vs Claude on the same eval harness
+- **Hybrid RAG + Reranking**: BM25 (keyword) + FAISS (dense) retrieval, fused and reranked by a local cross-encoder (FlashRank) for sharply better, grounded, cited chunks
 - **Free Local Embeddings**: RAG uses a local FastEmbed (ONNX) model by default — no embeddings API key, no per-vector cost
 - **Typed, Validated I/O**: Agents emit Pydantic-validated structured output (`ResearchPlan`, `FactSet`) — no fragile JSON parsing
 - **Evaluation Harness**: Scores every report for citation grounding, structure, source grounding, faithfulness, and topic relevance — with a reproducible before/after scorecard
@@ -136,8 +137,8 @@ measure a real before/after when you change prompts, models, or retrieval.
 | Agent Orchestration | LangGraph (stateful graph + reflection loop) |
 | LLM               | OpenAI (GPT-4o-mini) or Anthropic (Claude) — configurable |
 | Embeddings        | Local FastEmbed (BAAI/bge-small-en-v1.5), free; OpenAI optional |
-| Vector Store      | FAISS                               |
-| Web Search        | DuckDuckGo                          |
+| Retrieval         | Hybrid BM25 + FAISS, reranked with FlashRank (local cross-encoder) |
+| Web Search        | ddgs (direct, with retry/backoff)   |
 | PDF Parsing       | PyPDF                               |
 | Validation        | Pydantic v2 (structured output)     |
 | Evaluation        | Custom harness (deterministic + LLM-judge) |
@@ -160,8 +161,9 @@ av-research-agent/
 │   └── models.py            # Pydantic data contracts (ResearchPlan, Fact, FactSet)
 ├── utils/
 │   ├── llm.py               # Provider-agnostic LLM + embedding factories
+│   ├── web_search.py        # Robust ddgs web search (retry + fallback)
 │   ├── pdf_loader.py        # PDF ingestion and chunking
-│   ├── rag_engine.py        # FAISS-based RAG engine (local embeddings)
+│   ├── rag_engine.py        # Hybrid RAG (BM25 + dense) with FlashRank rerank
 │   └── observability.py     # Token / cost / latency tracking + LangSmith
 ├── evals/
 │   ├── dataset.py           # Golden evaluation cases + report fixtures

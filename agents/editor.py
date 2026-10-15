@@ -35,13 +35,22 @@ REPORT STRUCTURE:
 7. **Conclusion & Outlook** — Summary and future directions
 8. **Sources** — Numbered list of all sources cited
 
+GROUNDING RULES (critical):
+- Use ONLY the information in the provided facts. Do NOT introduce claims,
+  numbers, architectures, or sources that are not present in the facts.
+- Every inline citation [Source Name] must be a source that appears in the
+  facts. Never invent a source.
+- If the facts are sparse, write a SHORTER report. Do not pad with unsupported
+  content to reach a length target. It is better to be brief and correct.
+- If a section (e.g. a comparison table) is not supported by the facts, omit it.
+
 FORMATTING RULES:
 - Use markdown formatting
-- Include comparison tables where data supports it
-- Cite sources inline as [Source Name]
+- Include comparison tables only where the facts provide the data
+- Cite sources inline as [Source Name], drawn only from the facts
 - Highlight quantitative metrics in bold
 - Keep language technical but accessible
-- Total length: 800-1200 words"""),
+- Length should match the available evidence (concise is fine)"""),
             ("human", """Research Topic: {topic}
 
 Collected Facts:
