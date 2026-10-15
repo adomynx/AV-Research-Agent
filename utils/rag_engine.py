@@ -3,9 +3,10 @@ RAG Engine — Builds a vector store from uploaded documents and enables
 semantic search for the Research Agent to query uploaded papers.
 """
 
-from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
+
+from utils.llm import get_embeddings
 
 
 class RAGEngine:
@@ -13,22 +14,19 @@ class RAGEngine:
     RAG Engine that indexes uploaded research papers and provides
     semantic search capabilities for the Research Agent.
 
-    Uses FAISS for fast local vector similarity search and
-    OpenAI embeddings for document/query encoding.
+    Uses FAISS for fast local vector similarity search. The embedding model is
+    provider-agnostic (see utils.llm.get_embeddings) and defaults to a free
+    local model, so RAG works with no API key.
     """
 
-    def __init__(self, documents: list[Document], api_key: str):
+    def __init__(self, documents: list[Document]):
         """
         Initialize the RAG engine with documents.
 
         Args:
             documents: List of chunked LangChain Documents
-            api_key: OpenAI API key for embeddings
         """
-        self.embeddings = OpenAIEmbeddings(
-            api_key=api_key,
-            model="text-embedding-3-small"
-        )
+        self.embeddings = get_embeddings()
 
         if documents:
             self.vectorstore = FAISS.from_documents(

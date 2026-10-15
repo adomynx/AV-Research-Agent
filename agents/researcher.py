@@ -1,12 +1,37 @@
 """
 Research Agent — Searches the web and uploaded papers (via RAG) to collect
 structured facts with source attribution for autonomous driving topics.
+
+Fact extraction is bound to the ``FactSet`` schema via structured output, so
+every fact is a validated ``Fact`` (typed relevance, non-empty fields) rather
+than an untyped dict.
 """
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_community.tools import DuckDuckGoSearchResults
+
+from schemas.models import Fact, FactSet, Relevance
+from utils.llm import get_chat_model
+
+SYSTEM_PROMPT = """You are an autonomous driving research analyst.
+Given search results and/or paper excerpts about a specific query, extract
+the most important facts as structured data.
+
+FOCUS ON:
+- Quantitative results (mAP, IoU, FPS, latency, accuracy)
+- Architecture details and innovations
+- Dataset and benchmark comparisons
+- Deployment constraints (compute, real-time requirements)
+- Safety-critical findings
+- Limitations and failure cases
+
+Each fact must have:
+- title: Short descriptive title (max 10 words)
+- content: The key finding or information (2-3 sentences max)
+- source: Where this information came from (a URL, paper name, or site)
+- relevance: "high", "medium", or "low"
+
+Return 3-5 facts per query. Prefer high and medium relevance."""
 
 
 class ResearchAgent:
@@ -18,37 +43,13 @@ class ResearchAgent:
     3. Extracts structured facts with source attribution
     """
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini", rag_engine=None):
-        self.llm = ChatOpenAI(
-            model=model,
-            api_key=api_key,
-            temperature=0.2
-        )
+    def __init__(self, rag_engine=None):
+        llm = get_chat_model(temperature=0.2)
         self.rag_engine = rag_engine
         self.search_tool = DuckDuckGoSearchResults(max_results=5)
-        self.parser = JsonOutputParser()
 
-        self.extraction_prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an autonomous driving research analyst. 
-Given search results and/or paper excerpts about a specific query, extract 
-the most important facts as structured data.
-
-FOCUS ON:
-- Quantitative results (mAP, IoU, FPS, latency, accuracy)
-- Architecture details and innovations
-- Dataset and benchmark comparisons
-- Deployment constraints (compute, real-time requirements)
-- Safety-critical findings
-- Limitations and failure cases
-
-Return a JSON array of fact objects. Each fact must have:
-- "title": Short descriptive title (max 10 words)
-- "content": The key finding or information (2-3 sentences max)
-- "source": Where this information came from
-- "relevance": "high", "medium", or "low"
-
-Return 3-5 facts per query. ONLY high and medium relevance.
-Return ONLY the JSON array, no explanation."""),
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", SYSTEM_PROMPT),
             ("human", """Research query: {query}
 Overall topic: {topic}
 
@@ -57,17 +58,15 @@ Web search results:
 
 {rag_context}
 
-Extract the key facts:""")
+Extract the key facts:"""),
         ])
-
-        self.chain = self.extraction_prompt | self.llm | self.parser
+        self.chain = self.prompt | llm.with_structured_output(FactSet)
 
     def _web_search(self, query: str) -> str:
         """Execute web search and return results as text."""
         try:
-            results = self.search_tool.invoke(query)
-            return str(results)
-        except Exception as e:
+            return str(self.search_tool.invoke(query))
+        except Exception as e:  # noqa: BLE001
             print(f"[ResearchAgent] Web search error: {e}")
             return "No web results available."
 
@@ -75,17 +74,14 @@ Extract the key facts:""")
         """Query uploaded papers via RAG engine."""
         if not self.rag_engine:
             return ""
-
         try:
             results = self.rag_engine.query(query)
-            if results:
-                return f"Paper excerpts (from uploaded PDFs):\n{results}"
-            return ""
-        except Exception as e:
+            return f"Paper excerpts (from uploaded PDFs):\n{results}" if results else ""
+        except Exception as e:  # noqa: BLE001
             print(f"[ResearchAgent] RAG search error: {e}")
             return ""
 
-    def research(self, query: str, topic: str) -> list[dict]:
+    def research(self, query: str, topic: str) -> list[Fact]:
         """
         Research a specific sub-query using web search and RAG.
 
@@ -94,35 +90,25 @@ Extract the key facts:""")
             topic: The overall research topic for context
 
         Returns:
-            List of structured fact dictionaries
+            List of validated ``Fact`` objects (high/medium relevance preferred).
         """
-        # Gather information from both sources
         search_results = self._web_search(query)
         rag_context = self._rag_search(query)
 
         try:
-            facts = self.chain.invoke({
+            fact_set: FactSet = self.chain.invoke({
                 "query": query,
                 "topic": topic,
                 "search_results": search_results,
-                "rag_context": rag_context if rag_context else "No uploaded papers available."
+                "rag_context": rag_context or "No uploaded papers available.",
             })
-
-            if isinstance(facts, list):
-                # Filter to high and medium relevance only
-                filtered = [
-                    f for f in facts
-                    if isinstance(f, dict) and f.get("relevance") in ("high", "medium")
-                ]
-                return filtered if filtered else facts[:3]
-
-            return []
-
-        except Exception as e:
+            keep = fact_set.high_and_medium()
+            return keep if keep else fact_set.facts[:3]
+        except Exception as e:  # noqa: BLE001
             print(f"[ResearchAgent] Extraction error: {e}")
-            return [{
-                "title": "Search completed",
-                "content": f"Found results for: {query}. Manual review recommended.",
-                "source": "Web search",
-                "relevance": "medium"
-            }]
+            return [Fact(
+                title="Search completed",
+                content=f"Found results for: {query}. Manual review recommended.",
+                source="Web search",
+                relevance=Relevance.MEDIUM,
+            )]

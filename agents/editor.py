@@ -3,8 +3,10 @@ Editor Agent — Compiles collected research facts into a structured,
 publication-ready research report with proper citations and analysis.
 """
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+
+from schemas.models import Fact
+from utils.llm import get_chat_model, message_text
 
 
 class EditorAgent:
@@ -15,13 +17,8 @@ class EditorAgent:
     and cited sources.
     """
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
-        self.llm = ChatOpenAI(
-            model=model,
-            api_key=api_key,
-            temperature=0.4,
-            max_tokens=4000
-        )
+    def __init__(self):
+        self.llm = get_chat_model(temperature=0.4, max_tokens=4000)
 
         self.report_prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a senior technical writer specializing in autonomous 
@@ -53,7 +50,7 @@ Collected Facts:
 Compile these facts into a structured research report:""")
         ])
 
-    def compile_report(self, topic: str, facts: list[dict]) -> str:
+    def compile_report(self, topic: str, facts: list[Fact]) -> str:
         """
         Compile collected facts into a structured research report.
 
@@ -73,30 +70,25 @@ Compile these facts into a structured research report:""")
                 "topic": topic,
                 "facts": formatted_facts
             })
-            return result.content
+            return message_text(result)
 
         except Exception as e:
             print(f"[EditorAgent] Report generation error: {e}")
             return self._fallback_report(topic, facts)
 
-    def _format_facts(self, facts: list[dict]) -> str:
-        """Format fact dictionaries into readable text for the prompt."""
+    def _format_facts(self, facts: list[Fact]) -> str:
+        """Format facts into readable text for the prompt."""
         lines = []
         for i, fact in enumerate(facts, 1):
-            title = fact.get("title", "Untitled")
-            content = fact.get("content", "")
-            source = fact.get("source", "Unknown")
-            relevance = fact.get("relevance", "medium")
-
             lines.append(
-                f"Fact {i} [{relevance.upper()}]:\n"
-                f"  Title: {title}\n"
-                f"  Content: {content}\n"
-                f"  Source: {source}\n"
+                f"Fact {i} [{fact.relevance.value.upper()}]:\n"
+                f"  Title: {fact.title}\n"
+                f"  Content: {fact.content}\n"
+                f"  Source: {fact.source}\n"
             )
         return "\n".join(lines)
 
-    def _fallback_report(self, topic: str, facts: list[dict]) -> str:
+    def _fallback_report(self, topic: str, facts: list[Fact]) -> str:
         """Generate a basic report if LLM compilation fails."""
         report = f"# Research Report: {topic}\n\n"
         report += "## Executive Summary\n"
@@ -104,13 +96,12 @@ Compile these facts into a structured research report:""")
         report += "## Key Findings\n\n"
 
         for i, fact in enumerate(facts, 1):
-            report += f"### {i}. {fact.get('title', 'Finding')}\n"
-            report += f"{fact.get('content', '')}\n"
-            report += f"*Source: {fact.get('source', 'Unknown')}*\n\n"
+            report += f"### {i}. {fact.title}\n"
+            report += f"{fact.content}\n"
+            report += f"*Source: {fact.source}*\n\n"
 
         report += "## Sources\n\n"
-        sources = list(set(f.get("source", "Unknown") for f in facts))
-        for i, source in enumerate(sources, 1):
+        for i, source in enumerate(dict.fromkeys(f.source for f in facts), 1):
             report += f"{i}. {source}\n"
 
         return report
