@@ -1,9 +1,8 @@
 """
 PDF Loader — Handles ingestion and chunking of uploaded research papers.
-Uses PyPDF2 for extraction and LangChain text splitters for chunking.
+Uses LangChain's PyPDFLoader (pypdf) for extraction and text splitters for chunking.
 """
 
-import io
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
