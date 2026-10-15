@@ -151,6 +151,10 @@ measure a real before/after when you change prompts, models, or retrieval.
 ```
 av-research-agent/
 ├── app.py                   # Main Streamlit application
+├── api/
+│   └── main.py              # FastAPI REST backend (/health, /research)
+├── Dockerfile               # Container image for the API
+├── .dockerignore
 ├── agents/
 │   ├── graph.py             # LangGraph agentic pipeline with reflection loop
 │   ├── triage.py            # Topic decomposition agent (structured output)
@@ -169,6 +173,7 @@ av-research-agent/
 │   ├── dataset.py           # Golden evaluation cases + report fixtures
 │   ├── metrics.py           # Deterministic + LLM-as-judge metrics
 │   ├── run_eval.py          # Eval runner → scorecard
+│   ├── benchmark.py         # Compare providers/models on the eval
 │   └── results/             # Generated scorecards (JSON + Markdown)
 ├── .env.example
 ├── requirements.txt
@@ -189,6 +194,51 @@ The project treats quality as something you **measure**, not vibe-check.
 | `topic_relevance` | LLM-as-judge | Report actually answers the requested topic |
 
 Deterministic metrics run offline with no API key; LLM-as-judge metrics run
-when `OPENAI_API_KEY` is set. Each run writes a timestamped scorecard so you
+when a provider API key is set. Each run writes a timestamped scorecard so you
 can compare before/after any change.
+
+### Provider benchmark
+
+Compare GPT vs Claude (or any models) on the same eval:
+
+```bash
+python -m evals.benchmark --combos anthropic:claude-haiku-5-5 openai:gpt-4o-mini
+```
+
+Each combo runs the live eval and the scores are tabulated side by side. (Each
+combo spends API credits for its provider.)
+
+## REST API
+
+The same pipeline is exposed as a FastAPI service:
+
+```bash
+uvicorn api.main:app --reload --port 8000
+# GET  http://localhost:8000/health
+# POST http://localhost:8000/research   {"topic": "...", "max_iterations": 2}
+# Interactive docs at http://localhost:8000/docs
+```
+
+`POST /research` returns the report, collected facts, queries run, the agent
+decision log, and token usage as JSON.
+
+## Docker & Deployment
+
+```bash
+docker build -t av-research-agent .
+docker run -p 8000:8000 --env-file .env av-research-agent
+```
+
+The image runs the FastAPI backend with a container healthcheck on `/health`.
+It deploys as-is to any container host (Render, Railway, Fly.io, Cloud Run) —
+set the same `.env` variables as secrets there.
+
+## Known limitations
+
+- **Web search throttling:** DuckDuckGo (`ddgs`) rate-limits bursts of queries;
+  the agent retries and then degrades gracefully (falls back to model
+  knowledge). For reliable fresh grounding, swap in a keyed search API
+  (Tavily, Serper, Brave) behind `utils/web_search.py`.
+- Cost tracking reports token counts for all providers but dollar cost only for
+  OpenAI (the callback is OpenAI-specific).
 

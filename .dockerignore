@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+.env.example
+evals/results/
+.fastembed_cache/
+*.pdf
+*.md
+!README.md
+.streamlit/
