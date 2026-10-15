@@ -6,7 +6,8 @@ venv/
 *.egg-info/
 dist/
 build/
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 *.pdf
 
 # Generated eval scorecards (regenerate with: python -m evals.run_eval)

@@ -1,6 +1,10 @@
 import streamlit as st
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()  # pick up provider + API keys from .env for the running app
+
 from agents.graph import run_research
 from utils.pdf_loader import load_pdf_documents
 from utils.rag_engine import RAGEngine
@@ -11,76 +15,187 @@ st.set_page_config(
     page_title="AV Research Agent",
     page_icon="🚗",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# --- Custom CSS ---
+# --------------------------------------------------------------------------- #
+# Styling
+# --------------------------------------------------------------------------- #
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #1a1a2e;
-        margin-bottom: 0.2rem;
-    }
-    .sub-header {
-        font-size: 1rem;
-        color: #6c757d;
-        margin-bottom: 2rem;
-    }
-    .agent-card {
-        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-        padding: 1.2rem;
-        border-radius: 12px;
-        color: white;
-        margin-bottom: 1rem;
-    }
-    .agent-name {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #00d2ff;
-    }
-    .fact-card {
-        background: #f8f9fa;
-        border-left: 4px solid #00d2ff;
-        padding: 0.8rem 1rem;
-        margin: 0.5rem 0;
-        border-radius: 0 8px 8px 0;
-    }
-    .status-running {
-        color: #ffc107;
-        font-weight: 600;
-    }
-    .status-complete {
-        color: #28a745;
-        font-weight: 600;
-    }
-    .metric-box {
-        background: #f1f3f5;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+/* hide default chrome */
+#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { display: none; }
+
+:root {
+    --accent: #22d3ee;
+    --indigo: #6366f1;
+    --violet: #a855f7;
+    --amber: #f59e0b;
+    --green: #34d399;
+    --surface: #14172a;
+    --surface-2: #1b1f38;
+    --border: #2a2f52;
+    --muted: #96a0c8;
+}
+
+.block-container { padding-top: 2rem; max-width: 1100px; }
+
+/* ---- Hero ---- */
+.hero {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 45%, #0e7490 100%);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 1.6rem 1.8rem;
+    margin-bottom: 1.1rem;
+    box-shadow: 0 10px 40px rgba(34, 211, 238, 0.08);
+}
+.hero h1 { font-size: 2rem; font-weight: 800; margin: 0; color: #fff; letter-spacing: -0.02em; }
+.hero p { color: #cbd5f5; margin: 0.35rem 0 0; font-size: 1.02rem; }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.chip {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14);
+    color: #e7eaf6; font-size: 0.8rem; font-weight: 500;
+    padding: 0.32rem 0.7rem; border-radius: 999px; backdrop-filter: blur(6px);
+}
+
+/* ---- Agent cards ---- */
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.8rem; }
+.agent-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 1.1rem; position: relative; overflow: hidden;
+    transition: transform .15s ease, border-color .15s ease;
+}
+.agent-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+.agent-card::before { content:""; position:absolute; top:0; left:0; right:0; height:3px;
+    background: linear-gradient(90deg, var(--indigo), var(--accent)); }
+.agent-card .ic { font-size: 1.5rem; }
+.agent-card .nm { font-weight: 700; color: #fff; margin: 0.4rem 0 0.3rem; font-size: 0.98rem; }
+.agent-card .ds { color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+
+/* ---- Timeline (decision trace) ---- */
+.timeline { margin: 0.4rem 0 0.6rem; }
+.tl-item {
+    position: relative; padding: 0.7rem 0.9rem 0.7rem 2.4rem;
+    border-left: 2px solid var(--border); margin-left: 0.6rem;
+}
+.tl-item:last-child { border-left-color: transparent; }
+.tl-item::before {
+    content: ""; position: absolute; left: -0.56rem; top: 0.95rem;
+    width: 1rem; height: 1rem; border-radius: 50%;
+    background: var(--dot, var(--accent)); box-shadow: 0 0 0 4px rgba(34,211,238,0.12);
+}
+.tl-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--dot, var(--accent));
+    border-radius: 10px; padding: 0.6rem 0.85rem; color: #dfe4f7; font-size: 0.88rem; line-height: 1.5;
+}
+.tl-plan    { --dot: var(--indigo); }
+.tl-research{ --dot: var(--accent); }
+.tl-reflect { --dot: var(--amber); }
+.tl-compile { --dot: var(--green); }
+
+/* ---- Stat tiles ---- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.7rem; margin: 0.3rem 0 0.6rem; }
+.stat-tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 13px;
+    padding: 0.9rem 1rem; text-align: center; position: relative; overflow: hidden;
+}
+.stat-tile::after { content:""; position:absolute; bottom:0; left:0; right:0; height:3px; background: var(--accent2, var(--accent)); opacity:0.8; }
+.stat-val { font-size: 1.6rem; font-weight: 800; color: #fff; line-height: 1; }
+.stat-lbl { font-size: 0.72rem; color: var(--muted); margin-top: 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ---- Fact / query cards ---- */
+.fact-card {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); padding: 0.7rem 0.9rem; margin: 0.45rem 0;
+    border-radius: 0 10px 10px 0; color: #dfe4f7; font-size: 0.86rem;
+}
+.fact-card small { color: var(--muted); }
+.rel-high { color: var(--green); font-weight: 600; }
+.rel-medium { color: var(--amber); font-weight: 600; }
+.rel-low { color: var(--muted); }
+
+/* ---- Report paper ---- */
+.report-paper {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.6rem 2rem; margin-top: 0.5rem;
+}
+
+.status-running { color: var(--amber); font-weight: 600; }
+.status-complete { color: var(--green); font-weight: 700; }
+
+/* primary button polish */
+.stButton>button[kind="primary"] {
+    background: linear-gradient(135deg, var(--indigo), var(--accent));
+    border: none; font-weight: 700;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# --- Session State ---
-if "research_results" not in st.session_state:
-    st.session_state.research_results = None
-if "research_log" not in st.session_state:
-    st.session_state.research_log = []
-if "rag_engine" not in st.session_state:
-    st.session_state.rag_engine = None
-if "uploaded_docs" not in st.session_state:
-    st.session_state.uploaded_docs = []
 
-# --- Sidebar ---
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
+def _chip(text: str) -> str:
+    return f'<span class="chip">{text}</span>'
+
+
+def _stage_class(line: str) -> str:
+    if "Triage" in line:
+        return "tl-plan"
+    if "Research round" in line:
+        return "tl-research"
+    if "Reflection" in line:
+        return "tl-reflect"
+    if "Editor" in line or "compiled" in line:
+        return "tl-compile"
+    return "tl-research"
+
+
+def _timeline_html(log: list[str]) -> str:
+    items = "".join(
+        f'<div class="tl-item {_stage_class(l)}"><div class="tl-card">{l}</div></div>'
+        for l in log
+    )
+    return f'<div class="timeline">{items}</div>'
+
+
+def _stats_html(tiles: list[tuple]) -> str:
+    cells = "".join(
+        f'<div class="stat-tile" style="--accent2:{accent}">'
+        f'<div class="stat-val">{value}</div><div class="stat-lbl">{label}</div></div>'
+        for label, value, accent in tiles
+    )
+    return f'<div class="stat-grid">{cells}</div>'
+
+
+# --------------------------------------------------------------------------- #
+# Session state
+# --------------------------------------------------------------------------- #
+for key, default in [
+    ("research_results", None), ("research_log", []),
+    ("rag_engine", None), ("uploaded_docs", []), ("run_meta", None),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+# --------------------------------------------------------------------------- #
+# Sidebar
+# --------------------------------------------------------------------------- #
 with st.sidebar:
     st.markdown("### ⚙️ Configuration")
 
+    _default_idx = 1 if os.getenv("LLM_PROVIDER", "openai").lower() == "anthropic" else 0
     provider = st.radio(
         "LLM Provider",
         options=["OpenAI", "Anthropic (Claude)"],
+        index=_default_idx,
         help="Pick the model provider. The pipeline is provider-agnostic.",
     )
     os.environ["LLM_PROVIDER"] = "anthropic" if provider.startswith("Anthropic") else "openai"
@@ -96,216 +211,202 @@ with st.sidebar:
         if api_key:
             os.environ["OPENAI_API_KEY"] = api_key
 
-    st.caption("📎 Embeddings run locally (free) by default — RAG needs no API key.")
+    if has_llm_credentials():
+        st.success(f"✅ {provider_label()}", icon="🔑")
+    else:
+        st.warning("Add an API key to run research.")
+
+    st.caption("📎 Embeddings run locally (free) — RAG needs no API key.")
 
     st.markdown("---")
-    st.markdown("### 📄 Upload Research Papers")
+    st.markdown("### 📄 Research Papers")
     uploaded_files = st.file_uploader(
         "Upload PDFs for RAG-powered analysis",
-        type=["pdf"],
-        accept_multiple_files=True,
-        help="Upload AV/perception papers for deeper context"
+        type=["pdf"], accept_multiple_files=True,
+        help="Upload AV/perception papers for deeper, cited context",
     )
-
     if uploaded_files:
-        with st.spinner("Processing PDFs..."):
+        with st.spinner("Indexing PDFs (hybrid retrieval)..."):
             docs = load_pdf_documents(uploaded_files)
             st.session_state.uploaded_docs = docs
             st.session_state.rag_engine = RAGEngine(docs)
             st.success(f"✅ {len(uploaded_files)} paper(s) indexed")
-    
+
     st.markdown("---")
     st.markdown("### 🔬 Example Topics")
-    
     example_topics = [
         "BEVFusion vs PointPillars for 3D object detection",
         "ODD exit detection strategies in autonomous vehicles",
         "LiDAR-camera fusion architectures for perception",
         "Safety validation methods for AV perception systems",
-        "Real-time object detection on edge devices for robotics",
-        "Transformer architectures in autonomous driving perception"
+        "Transformer architectures in autonomous driving perception",
     ]
-    
     for topic in example_topics:
-        if st.button(f"📌 {topic}", key=topic, use_container_width=True):
+        if st.button(topic, key=topic, use_container_width=True):
             st.session_state["selected_topic"] = topic
 
-# --- Main Content ---
-st.markdown('<p class="main-header">🚗 AV Research Agent</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Multi-agent research pipeline for autonomous driving & perception systems</p>', unsafe_allow_html=True)
+# --------------------------------------------------------------------------- #
+# Hero
+# --------------------------------------------------------------------------- #
+rag_chip = "🟢 RAG active" if st.session_state.rag_engine else "⚪ RAG idle"
+trace_chip = "🟢 LangSmith on" if enable_langsmith() else "⚪ Tracing off"
+st.markdown(f"""
+<div class="hero">
+    <h1>🚗 AV Research Agent</h1>
+    <p>An agentic research pipeline for autonomous driving &amp; perception — it plans, searches, reflects on gaps, and compiles cited reports.</p>
+    <div class="chip-row">
+        {_chip("🧠 LangGraph · reflection loop")}
+        {_chip("🔀 Hybrid RAG + rerank")}
+        {_chip("🧩 " + provider_label())}
+        {_chip(rag_chip)}
+        {_chip(trace_chip)}
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-# --- Architecture Overview ---
-with st.expander("🏗️ Agent Architecture", expanded=False):
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        <div class="agent-card">
-            <p class="agent-name">🎯 Triage Agent</p>
-            <p>Analyzes the research topic, decomposes it into focused sub-queries, 
-            and plans the research strategy across perception, planning, and control domains.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class="agent-card">
-            <p class="agent-name">🔍 Research Agent</p>
-            <p>Searches the web and uploaded papers (via RAG) for relevant information. 
-            Extracts key findings, benchmarks, architectures, and datasets with source attribution.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div class="agent-card">
-            <p class="agent-name">📝 Editor Agent</p>
-            <p>Compiles all collected facts into a structured research report with 
-            title, executive summary, comparison tables, and cited sources.</p>
-        </div>
-        """, unsafe_allow_html=True)
+with st.expander("🏗️  How it works — the agent architecture"):
+    st.markdown("""
+    <div class="agent-grid">
+      <div class="agent-card"><div class="ic">🎯</div><div class="nm">Triage</div>
+        <div class="ds">Decomposes the topic into 4–6 focused, searchable sub-queries.</div></div>
+      <div class="agent-card"><div class="ic">🔍</div><div class="nm">Research</div>
+        <div class="ds">Web search + hybrid RAG (BM25 + dense, reranked); extracts typed facts with sources.</div></div>
+      <div class="agent-card"><div class="ic">🤔</div><div class="nm">Reflection</div>
+        <div class="ds">Judges evidence coverage and loops back with follow-up queries on gaps.</div></div>
+      <div class="agent-card"><div class="ic">📝</div><div class="nm">Editor</div>
+        <div class="ds">Compiles grounded facts into a structured, cited report.</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.markdown("---")
-
-# --- Research Input ---
+# --------------------------------------------------------------------------- #
+# Input
+# --------------------------------------------------------------------------- #
 default_topic = st.session_state.get("selected_topic", "")
 research_topic = st.text_input(
-    "🔎 Enter your research topic",
+    "🔎 Research topic",
     value=default_topic,
-    placeholder="e.g., LiDAR-camera fusion architectures for autonomous driving perception"
+    placeholder="e.g., LiDAR-camera fusion architectures for autonomous driving perception",
 )
 
-col_btn1, col_btn2 = st.columns([1, 5])
+col_btn1, col_btn2, _ = st.columns([2, 2, 6])
 with col_btn1:
     start_research = st.button("🚀 Start Research", type="primary", use_container_width=True)
 with col_btn2:
-    if st.button("🗑️ Clear Results", use_container_width=False):
+    if st.button("🗑️ Clear", use_container_width=True):
         st.session_state.research_results = None
         st.session_state.research_log = []
+        st.session_state.run_meta = None
         st.rerun()
 
-# --- Research Pipeline ---
+
+def _render_process(decision_log, sub_queries, all_facts, meta):
+    st.markdown("#### 🔁 Agent Decision Trace")
+    st.caption("Plan → Research → Reflect ↺ → Compile. The Reflect step loops back when it finds evidence gaps.")
+    st.markdown(_timeline_html(decision_log), unsafe_allow_html=True)
+
+    st.markdown("#### 📊 Run Metrics")
+    st.markdown(_stats_html([
+        ("Research Rounds", meta["rounds"], "#6366f1"),
+        ("Queries", len(sub_queries), "#22d3ee"),
+        ("Facts", len(all_facts), "#a855f7"),
+        ("Sources", meta["sources"], "#34d399"),
+        ("Tokens", f"{meta['tokens']:,}", "#f59e0b"),
+        ("Est. Cost", f"${meta['cost']:.4f}", "#f472b6"),
+    ]), unsafe_allow_html=True)
+
+    with st.expander(f"🧭 Queries executed ({len(sub_queries)})"):
+        for i, q in enumerate(sub_queries, 1):
+            st.markdown(f'<div class="fact-card"><strong>Query {i}:</strong> {q}</div>', unsafe_allow_html=True)
+
+    with st.expander(f"📋 Collected facts ({len(all_facts)})"):
+        for f in all_facts:
+            rel = f.relevance.value
+            st.markdown(
+                f'<div class="fact-card"><strong>{f.title}</strong> '
+                f'<span class="rel-{rel}">● {rel}</span><br>{f.content}<br>'
+                f'<small>Source: {f.source}</small></div>',
+                unsafe_allow_html=True,
+            )
+
+
+def _render_report(report: str):
+    if not report:
+        st.info("Run a research query to generate a report.")
+        return
+    st.markdown(f'<div class="report-paper">{report}</div>', unsafe_allow_html=True)
+    st.download_button(
+        "📥 Download Report (.md)", data=report,
+        file_name=f"av_research_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+        mime="text/markdown",
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Pipeline
+# --------------------------------------------------------------------------- #
 if start_research and research_topic:
     if not has_llm_credentials():
-        st.error("⚠️ Please enter your API key for the selected provider in the sidebar.")
+        st.error("⚠️ Please add your API key for the selected provider in the sidebar.")
         st.stop()
-    
-    st.session_state.research_log = []
-    st.session_state.research_results = None
-    
-    tab_process, tab_report = st.tabs(["📊 Research Process", "📄 Report"])
-    
-    with tab_process:
-        st.markdown("### 🧠 Agentic Research Graph")
-        st.caption("Plan → Research → Reflect ↺ → Compile — the Reflect step loops back to Research when it finds evidence gaps.")
 
-        status_text = st.empty()
+    tab_process, tab_report = st.tabs(["📊 Research Process", "📄 Report"])
+
+    with tab_process:
+        status = st.empty()
+        progress = st.progress(0, text="Starting…")
+        steps = {"n": 0}
 
         def on_event(msg: str):
-            status_text.markdown(f'<p class="status-running">{msg}</p>', unsafe_allow_html=True)
+            steps["n"] += 1
+            status.markdown(f'<p class="status-running">⏳ {msg}</p>', unsafe_allow_html=True)
+            progress.progress(min(steps["n"] / 6, 0.95), text=msg)
 
-        with st.spinner("Running agentic research pipeline..."):
-            with track_run("research_graph") as run_stats:
-                final_state = run_research(
-                    research_topic,
-                    rag_engine=st.session_state.rag_engine,
-                    max_iterations=2,
-                    on_event=on_event,
-                )
+        with track_run("research_graph") as run_stats:
+            final_state = run_research(
+                research_topic, rag_engine=st.session_state.rag_engine,
+                max_iterations=2, on_event=on_event,
+            )
+        progress.progress(1.0, text="Complete")
+        status.markdown('<p class="status-complete">✅ Research complete</p>', unsafe_allow_html=True)
 
-        run_tokens = run_stats.total_tokens
-        run_cost_usd = run_stats.total_cost_usd
         sub_queries = final_state.get("all_queries", [])
         all_facts = final_state.get("facts", [])
-        iterations = final_state.get("iteration", 0)
         decision_log = final_state.get("log", [])
+        meta = {
+            "rounds": final_state.get("iteration", 0),
+            "sources": len({f.source for f in all_facts}),
+            "tokens": run_stats.total_tokens,
+            "cost": run_stats.total_cost_usd,
+        }
 
         st.session_state.research_results = final_state.get("report", "")
-        st.session_state.research_log = [
-            {"agent": "Graph", "action": line, "timestamp": datetime.now().strftime("%H:%M:%S")}
-            for line in decision_log
-        ]
+        st.session_state.research_log = decision_log
+        st.session_state.run_meta = {"queries": sub_queries, "facts": all_facts, **meta}
 
-        status_text.markdown('<p class="status-complete">✅ Research complete!</p>', unsafe_allow_html=True)
+        _render_process(decision_log, sub_queries, all_facts, meta)
 
-        # --- Decision trace (this is the visible "agency") ---
-        st.markdown("#### 🔁 Agent Decision Trace")
-        for line in decision_log:
-            st.markdown(f"- {line}")
-
-        with st.expander(f"🧭 Queries executed ({len(sub_queries)})", expanded=False):
-            for i, query in enumerate(sub_queries, 1):
-                st.markdown(f"""<div class="fact-card"><strong>Query {i}:</strong> {query}</div>""",
-                            unsafe_allow_html=True)
-
-        with st.expander(f"📋 All Collected Facts ({len(all_facts)})", expanded=False):
-            for fact in all_facts:
-                st.markdown(f"""<div class="fact-card">
-                    <strong>{fact.title}</strong> <em>({fact.relevance.value})</em><br>
-                    {fact.content}<br>
-                    <small>Source: {fact.source}</small>
-                </div>""", unsafe_allow_html=True)
-
-        # --- Metrics ---
-        st.markdown("### 📊 Research Metrics")
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-        with m1:
-            st.metric("Research Rounds", iterations)
-        with m2:
-            st.metric("Queries", len(sub_queries))
-        with m3:
-            st.metric("Facts", len(all_facts))
-        with m4:
-            st.metric("Sources", len({f.source for f in all_facts}))
-        with m5:
-            st.metric("Tokens", f"{run_tokens:,}")
-        with m6:
-            st.metric("Est. Cost", f"${run_cost_usd:.4f}")
-
-        rag_badge = "🟢 RAG active" if st.session_state.rag_engine else "⚪ RAG inactive"
-        trace_badge = "🟢 LangSmith tracing on" if enable_langsmith() else "⚪ LangSmith off"
-        st.caption(f"🧩 {provider_label()}  ·  {rag_badge}  ·  {trace_badge}")
-
-        # --- Activity Log ---
-        with st.expander("📜 Agent Activity Log"):
-            for log in st.session_state.research_log:
-                st.markdown(f"**[{log['timestamp']}] {log['agent']}** — {log['action']}")
-    
     with tab_report:
-        if st.session_state.research_results:
-            st.markdown(st.session_state.research_results)
-            
-            st.download_button(
-                label="📥 Download Report (.md)",
-                data=st.session_state.research_results,
-                file_name=f"av_research_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-                mime="text/markdown"
-            )
+        _render_report(st.session_state.research_results)
 
 elif st.session_state.research_results:
     tab_process, tab_report = st.tabs(["📊 Research Process", "📄 Report"])
-    
     with tab_process:
-        if st.session_state.research_log:
-            for log in st.session_state.research_log:
-                st.markdown(f"**[{log['timestamp']}] {log['agent']}** — {log['action']}")
-        else:
-            st.info("Run a research query to see the process.")
-    
-    with tab_report:
-        st.markdown(st.session_state.research_results)
-        st.download_button(
-            label="📥 Download Report (.md)",
-            data=st.session_state.research_results,
-            file_name=f"av_research_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-            mime="text/markdown"
+        m = st.session_state.run_meta or {}
+        _render_process(
+            st.session_state.research_log,
+            m.get("queries", []), m.get("facts", []),
+            {"rounds": m.get("rounds", 0), "sources": m.get("sources", 0),
+             "tokens": m.get("tokens", 0), "cost": m.get("cost", 0.0)},
         )
+    with tab_report:
+        _render_report(st.session_state.research_results)
 
-# --- Footer ---
-st.markdown("---")
+# --------------------------------------------------------------------------- #
+# Footer
+# --------------------------------------------------------------------------- #
 st.markdown(
-    "<p style='text-align: center; color: #6c757d; font-size: 0.85rem;'>"
-    "Built with LangChain, Streamlit & RAG | AV Research Agent v1.0"
+    "<p style='text-align:center; color:#5b6485; font-size:0.8rem; margin-top:2rem;'>"
+    "Built with LangGraph · LangChain · hybrid RAG · provider-agnostic (OpenAI ↔ Claude)"
     "</p>",
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
