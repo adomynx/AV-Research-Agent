@@ -160,8 +160,8 @@ def _stage_class(line: str) -> str:
 
 def _timeline_html(log: list[str]) -> str:
     items = "".join(
-        f'<div class="tl-item {_stage_class(l)}"><div class="tl-card">{l}</div></div>'
-        for l in log
+        f'<div class="tl-item {_stage_class(line)}"><div class="tl-card">{line}</div></div>'
+        for line in log
     )
     return f'<div class="timeline">{items}</div>'
 
