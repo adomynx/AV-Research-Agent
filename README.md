@@ -1,265 +1,178 @@
 # 🚗 AV Research Agent
 
 ![CI](https://github.com/adomynx/AV-Research-Agent/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-A multi-agent research pipeline built with **LangChain** and **Streamlit** for automated literature review and technical analysis in autonomous driving and perception systems.
+**An evaluated, agentic research pipeline for autonomous-driving & perception literature.**
+Give it a topic; it plans sub-queries, searches the web and your uploaded papers,
+*reflects on evidence gaps and researches deeper*, then compiles a cited report —
+with a built-in evaluation harness that measures report faithfulness.
 
-## Overview
+### ▶️ [Live demo](https://av-research-agent-rkxq7reyynlruyc6qddtrw.streamlit.app/) · [REST API](#rest-api) · [Eval harness](#evaluation)
 
-AV Research Agent automates the process of researching autonomous driving topics by coordinating three specialized AI agents that plan, gather, and compile information into structured technical reports.
+![AV Research Agent](docs/screenshot.jpg)
 
-Upload your own research papers (PDFs) for **RAG-powered analysis** — the agents will cross-reference web findings with your uploaded documents for deeper, citation-backed insights.
+---
+
+## Why this project is interesting (engineering, not a demo)
+
+Most "LLM app" projects are a prompt chain behind a UI. This one is built the way a
+production AI system is built:
+
+| Concern | How it's addressed |
+|---|---|
+| **Is the output actually good?** | An **evaluation harness** scores every report (faithfulness, citation grounding, structure, relevance) and writes versioned scorecards. Grounding the Editor raised measured **faithfulness 0.60 → 0.90**. |
+| **Real agency vs. a fixed chain** | A **LangGraph** state machine with a bounded **reflection loop** — the agent decides whether evidence is sufficient and researches gaps if not. |
+| **Reliable I/O** | **Pydantic structured outputs** on every agent (no fragile JSON parsing); graceful degradation on every external call. |
+| **Retrieval quality** | **Hybrid retrieval** (BM25 + dense) with **cross-encoder reranking** and grounded citations. |
+| **Vendor risk** | **Provider-agnostic** — OpenAI ↔ Anthropic via one env var; free local embeddings so RAG needs no API key. |
+| **Shippable** | **FastAPI** service, **Dockerfile**, and a one-click Render/Streamlit deploy. |
+| **Proven, not claimed** | **27 unit tests** + **GitHub Actions CI** (lint + tests + offline eval) on every push. |
+| **Cost/latency visibility** | Per-run **token / cost / latency** tracking; optional LangSmith tracing. |
+
+---
 
 ## Architecture
 
-The pipeline is a **stateful LangGraph agent**, not a fixed chain. After each
-research round a Reflection step decides whether the evidence is good enough or
-whether to loop back and dig deeper — so the path depends on the topic.
+### Agent pipeline (LangGraph)
 
-```
-        ┌──────┐     ┌──────────┐     ┌─────────┐
-  START │ plan │ ──▶ │ research │ ──▶ │ reflect │
-        └──────┘     └──────────┘     └────┬────┘
-          🎯            🔍 web+RAG      🤔  │
-                          ▲                 │
-                          │  gaps found     │ sufficient
-                          └─────────────────┤
-                                            ▼
-                                       ┌─────────┐
-                                       │ compile │ ──▶ END
-                                       └─────────┘
-                                          📝
+```mermaid
+flowchart LR
+    A([Research topic]) --> P["🎯 Triage<br/>plan 4–6 sub-queries"]
+    P --> R["🔍 Research<br/>web + hybrid RAG<br/>→ typed facts"]
+    R --> F{"🤔 Reflection<br/>evidence sufficient?"}
+    F -- "gaps found<br/>(bounded loop)" --> R
+    F -- "sufficient" --> E["📝 Editor<br/>compile cited report"]
+    E --> O([Grounded report])
 ```
 
-| Node | Agent | Role |
-|------|-------|------|
-| `plan` | 🎯 Triage | Decomposes the topic into 4-6 focused sub-queries |
-| `research` | 🔍 Research | Robust web search (ddgs) + hybrid RAG (BM25+dense, reranked); extracts typed facts with sources |
-| `reflect` | 🤔 Reflection | Judges evidence coverage; emits targeted follow-up queries on gaps (bounded loop) |
-| `compile` | 📝 Editor | Compiles facts into a cited, structured report |
+The `Reflection → Research` edge is conditional and bounded by `max_iterations`,
+so the agent digs deeper on hard topics but always terminates.
 
-The `reflect → research` edge is conditional: the graph loops only while gaps
-remain and `iteration < max_iterations`, guaranteeing termination.
+### System
 
-## Features
+```mermaid
+flowchart TB
+    subgraph Clients
+      UI["Streamlit UI"]
+      API["FastAPI&nbsp;&nbsp;/research"]
+    end
+    UI --> G
+    API --> G
+    subgraph Core["Agent core"]
+      G["LangGraph pipeline"]
+      G --> LLM["Provider-agnostic LLM<br/>OpenAI / Anthropic"]
+      G --> RAG["Hybrid RAG<br/>BM25 + dense + FlashRank"]
+      G --> WS["Web search<br/>Tavily → ddgs fallback"]
+    end
+    G --> EV["Eval harness<br/>metrics + scorecards"]
+    G -.observes.-> OBS["Token / cost / latency<br/>+ LangSmith"]
+```
 
-- **Agentic Graph (LangGraph)**: Plan → Research → **Reflect ↺** → Compile, with a bounded reflection loop that adaptively digs deeper when evidence is thin — real agency, not a fixed chain
-- **Provider-Agnostic**: Swap OpenAI ↔ Anthropic (Claude) with one env var — benchmark GPT vs Claude on the same eval harness
-- **Hybrid RAG + Reranking**: BM25 (keyword) + FAISS (dense) retrieval, fused and reranked by a local cross-encoder (FlashRank) for sharply better, grounded, cited chunks
-- **Free Local Embeddings**: RAG uses a local FastEmbed (ONNX) model by default — no embeddings API key, no per-vector cost
-- **Typed, Validated I/O**: Agents emit Pydantic-validated structured output (`ResearchPlan`, `FactSet`) — no fragile JSON parsing
-- **Evaluation Harness**: Scores every report for citation grounding, structure, source grounding, faithfulness, and topic relevance — with a reproducible before/after scorecard
-- **Observability**: Per-run token / cost / latency tracking, plus optional LangSmith tracing
-- **RAG Integration**: Upload research papers (PDF) for semantic search during analysis
-- **Web Search**: Automated web research using DuckDuckGo for current information
-- **AV Domain Focus**: Pre-tuned for perception, sensor fusion, ODD, V&V, and safety-critical systems
-- **Structured Reports**: Generates markdown reports with executive summaries, comparison tables, and citations
-- **Interactive UI**: Built with Streamlit — monitor each agent's progress, token cost, and RAG/trace status in real-time
-- **Downloadable Output**: Export reports as `.md` files
+---
 
-## Getting Started
+## Evaluation
 
-### 1. Clone the repository
+Quality is measured, not vibe-checked. `evals/run_eval.py` scores reports against a
+**20-case golden dataset**:
+
+| Metric | Type | Checks |
+|--------|------|--------|
+| `citation_coverage` | deterministic | every inline `[citation]` maps to a collected source (catches hallucinated cites) |
+| `structure_coverage` | deterministic | required report sections are present |
+| `source_grounding` | deterministic | every bibliography entry maps to a real fact |
+| `faithfulness` | LLM-as-judge | report claims are supported by the collected facts |
+| `topic_relevance` | LLM-as-judge | the report answers the requested topic |
+
+Deterministic metrics run offline with **no API key**; LLM-judge metrics run when a
+provider key is set. Each run writes a timestamped scorecard, so any prompt/model/
+retrieval change gets a clean **before/after**.
+
+```bash
+python -m evals.run_eval            # offline (free)
+python -m evals.run_eval --live     # regenerate reports + LLM-judge
+python -m evals.benchmark --combos anthropic:claude-haiku-5-5 openai:gpt-4o-mini
+```
+
+---
+
+## Quickstart
 
 ```bash
 git clone https://github.com/adomynx/AV-Research-Agent.git
 cd AV-Research-Agent
-```
 
-### 2. Create a virtual environment & install dependencies
-
-```bash
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
+python -m venv .venv && . .venv/Scripts/activate   # Windows
+# source .venv/bin/activate                        # macOS/Linux
 pip install -r requirements.txt
+
+cp .env.example .env     # set LLM_PROVIDER + the matching API key
+streamlit run app.py     # UI at http://localhost:8501
 ```
 
-### 3. Configure your environment
+Set `LLM_PROVIDER=openai|anthropic` and the matching `*_API_KEY`. Embeddings run
+locally (free); set `TAVILY_API_KEY` for reliable web search.
+
+## REST API
 
 ```bash
-cp .env.example .env
-# then edit .env and set OPENAI_API_KEY
+uvicorn api.main:app --port 8000      # docs at /docs
+# POST /research  {"topic": "...", "max_iterations": 2}
+# GET  /health
 ```
-
-You can also enter the key directly in the app sidebar. LangSmith tracing is
-optional — set the `LANGCHAIN_*` vars in `.env` to enable it.
-
-**Switching LLM provider:** set `LLM_PROVIDER=openai` or `LLM_PROVIDER=anthropic`
-in `.env` (and the matching `*_API_KEY`), or pick it in the app sidebar. Claude
-keys come from https://console.anthropic.com — note that's the **API**, separate
-from a Claude Pro subscription. Embeddings run locally for free regardless of
-provider, so RAG never needs an OpenAI key.
-
-### 4. Run the app
-
-```bash
-streamlit run app.py
-```
-
-Open your browser at `http://localhost:8501`.
-
-### 5. Run the evaluation harness
-
-```bash
-# Offline: deterministic metrics only (no API key, no network, free)
-python -m evals.run_eval
-
-# Live: regenerate reports with the real agents + LLM-as-judge metrics
-python -m evals.run_eval --live
-```
-
-Scorecards (JSON + Markdown) are written to `evals/results/`. Use them to
-measure a real before/after when you change prompts, models, or retrieval.
-
-## Usage
-
-1. Enter a research topic (or pick from the examples in the sidebar)
-2. Optionally upload research papers (PDFs) for RAG-powered analysis
-3. Click **Start Research** and watch the agents work
-4. View the compiled report in the **Report** tab
-5. Download the report as markdown
-
-### Example Topics
-
-- BEVFusion vs PointPillars for 3D object detection
-- ODD exit detection strategies in autonomous vehicles
-- LiDAR-camera fusion architectures for perception
-- Safety validation methods for AV perception systems
-- Transformer architectures in autonomous driving
-
-## Tech Stack
-
-| Component         | Technology                          |
-|-------------------|-------------------------------------|
-| LLM Framework     | LangChain                           |
-| Agent Orchestration | LangGraph (stateful graph + reflection loop) |
-| LLM               | OpenAI (GPT-4o-mini) or Anthropic (Claude) — configurable |
-| Embeddings        | Local FastEmbed (BAAI/bge-small-en-v1.5), free; OpenAI optional |
-| Retrieval         | Hybrid BM25 + FAISS, reranked with FlashRank (local cross-encoder) |
-| Web Search        | Tavily (keyed) with ddgs fallback   |
-| PDF Parsing       | PyPDF                               |
-| Validation        | Pydantic v2 (structured output)     |
-| Evaluation        | Custom harness (deterministic + LLM-judge) |
-| Observability     | Token/cost tracking + LangSmith     |
-| Frontend          | Streamlit                           |
-| Language          | Python 3.10+                        |
-
-## Project Structure
-
-```
-av-research-agent/
-├── app.py                   # Main Streamlit application
-├── api/
-│   └── main.py              # FastAPI REST backend (/health, /research)
-├── Dockerfile               # Container image for the API
-├── .dockerignore
-├── agents/
-│   ├── graph.py             # LangGraph agentic pipeline with reflection loop
-│   ├── triage.py            # Topic decomposition agent (structured output)
-│   ├── researcher.py        # Web search + RAG research agent (structured output)
-│   ├── reflection.py        # Evidence-gap reflection agent (drives the loop)
-│   └── editor.py            # Report compilation agent
-├── schemas/
-│   └── models.py            # Pydantic data contracts (ResearchPlan, Fact, FactSet)
-├── utils/
-│   ├── llm.py               # Provider-agnostic LLM + embedding factories
-│   ├── web_search.py        # Robust ddgs web search (retry + fallback)
-│   ├── pdf_loader.py        # PDF ingestion and chunking
-│   ├── rag_engine.py        # Hybrid RAG (BM25 + dense) with FlashRank rerank
-│   └── observability.py     # Token / cost / latency tracking + LangSmith
-├── evals/
-│   ├── dataset.py           # Golden evaluation cases + report fixtures
-│   ├── metrics.py           # Deterministic + LLM-as-judge metrics
-│   ├── run_eval.py          # Eval runner → scorecard
-│   ├── benchmark.py         # Compare providers/models on the eval
-│   └── results/             # Generated scorecards (JSON + Markdown)
-├── .env.example
-├── requirements.txt
-└── README.md
-```
-
-## Evaluation
-
-The project treats quality as something you **measure**, not vibe-check.
-`evals/run_eval.py` scores generated reports against a golden dataset:
-
-| Metric | Type | What it checks |
-|--------|------|----------------|
-| `citation_coverage` | deterministic | Every inline `[citation]` maps to a collected source (catches hallucinated cites) |
-| `structure_coverage` | deterministic | Required report sections are present |
-| `source_grounding` | deterministic | Every entry in the Sources section maps to a real fact |
-| `faithfulness` | LLM-as-judge | Report claims are supported by the collected facts |
-| `topic_relevance` | LLM-as-judge | Report actually answers the requested topic |
-
-Deterministic metrics run offline with no API key; LLM-as-judge metrics run
-when a provider API key is set. Each run writes a timestamped scorecard so you
-can compare before/after any change.
-
-### Provider benchmark
-
-Compare GPT vs Claude (or any models) on the same eval:
-
-```bash
-python -m evals.benchmark --combos anthropic:claude-haiku-5-5 openai:gpt-4o-mini
-```
-
-Each combo runs the live eval and the scores are tabulated side by side. (Each
-combo spends API credits for its provider.)
 
 ## Testing & CI
 
 ```bash
-pytest          # unit tests for metrics, schemas, provider utils, dataset
+pytest          # 27 unit tests: metrics, schemas, utils, dataset integrity
 ruff check .    # lint
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) runs lint + tests + the offline
-(deterministic, no-API-key) eval on every push and PR.
+CI (`.github/workflows/ci.yml`) runs lint + tests + the offline eval on every push/PR.
 
-## REST API
-
-The same pipeline is exposed as a FastAPI service:
+## Docker & deploy
 
 ```bash
-uvicorn api.main:app --reload --port 8000
-# GET  http://localhost:8000/health
-# POST http://localhost:8000/research   {"topic": "...", "max_iterations": 2}
-# Interactive docs at http://localhost:8000/docs
+docker build -t av-research-agent . && docker run -p 8000:8000 --env-file .env av-research-agent
 ```
 
-`POST /research` returns the report, collected facts, queries run, the agent
-decision log, and token usage as JSON.
+- **Render:** New + → Blueprint → this repo (`render.yaml`); set `ANTHROPIC_API_KEY` as a secret.
+- **Streamlit Community Cloud:** point at `app.py`, add keys under *Secrets*.
 
-## Docker & Deployment
+---
 
-```bash
-docker build -t av-research-agent .
-docker run -p 8000:8000 --env-file .env av-research-agent
+## Tech stack
+
+| Layer | Choice |
+|-------|--------|
+| Orchestration | LangGraph (stateful graph + reflection loop) |
+| LLM | OpenAI or Anthropic (configurable) · structured outputs via Pydantic |
+| Embeddings | Local FastEmbed (`bge-small-en-v1.5`), free; OpenAI optional |
+| Retrieval | Hybrid BM25 + FAISS, FlashRank cross-encoder rerank |
+| Web search | Tavily (keyed) → ddgs fallback |
+| API / UI | FastAPI · Streamlit |
+| Quality | Custom eval harness · pytest · ruff · GitHub Actions |
+
+## Project structure
+
 ```
-
-The image runs the FastAPI backend with a container healthcheck on `/health`.
-It deploys as-is to any container host (Render, Railway, Fly.io, Cloud Run) —
-set the same `.env` variables as secrets there.
-
-### Deploy the live app (Streamlit UI)
-
-**Render (blueprint included):** New + → Blueprint → connect this repo. Render
-reads `render.yaml`, builds, and gives you a public URL. Set `ANTHROPIC_API_KEY`
-(and optionally `TAVILY_API_KEY`) as secrets in the dashboard.
-
-**Streamlit Community Cloud (fastest):** push to GitHub → share.streamlit.io →
-pick the repo and `app.py` → add `ANTHROPIC_API_KEY` under **Secrets**. Free.
+app.py                 Streamlit UI
+api/main.py            FastAPI service (/health, /research)
+agents/                graph.py (LangGraph) · triage · researcher · reflection · editor
+schemas/models.py      Pydantic contracts (ResearchPlan, Fact, FactSet, ReflectionVerdict)
+utils/                 llm (provider factory) · rag_engine · web_search · observability · pdf_loader
+evals/                 dataset (20 cases) · metrics · run_eval · benchmark
+tests/                 27 unit tests
+Dockerfile · render.yaml · .github/workflows/ci.yml
+```
 
 ## Known limitations
 
-- **Web search throttling:** the default DuckDuckGo (`ddgs`) backend
-  rate-limits bursts of queries. Set `TAVILY_API_KEY` (free tier) to use
-  Tavily instead — reliable, LLM-oriented search; the agent falls back to
-  `ddgs`, then to model knowledge, so it never crashes.
-- Cost tracking reports token counts for all providers but dollar cost only for
-  OpenAI (the callback is OpenAI-specific).
+- **Web search:** the default DuckDuckGo backend rate-limits bursty agent load; set
+  `TAVILY_API_KEY` for reliable search. The agent degrades gracefully regardless.
+- **Cost tracking** reports token counts for all providers but dollar cost only for OpenAI.
 
+## License
+
+MIT
