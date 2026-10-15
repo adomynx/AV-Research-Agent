@@ -32,7 +32,7 @@ whether to loop back and dig deeper — so the path depends on the topic.
 | Node | Agent | Role |
 |------|-------|------|
 | `plan` | 🎯 Triage | Decomposes the topic into 4-6 focused sub-queries |
-| `research` | 🔍 Research | Web search (DuckDuckGo) + RAG (FAISS); extracts typed facts with sources |
+| `research` | 🔍 Research | Robust web search (ddgs) + hybrid RAG (BM25+dense, reranked); extracts typed facts with sources |
 | `reflect` | 🤔 Reflection | Judges evidence coverage; emits targeted follow-up queries on gaps (bounded loop) |
 | `compile` | 📝 Editor | Compiles facts into a cited, structured report |
 
@@ -43,6 +43,7 @@ remain and `iteration < max_iterations`, guaranteeing termination.
 
 - **Agentic Graph (LangGraph)**: Plan → Research → **Reflect ↺** → Compile, with a bounded reflection loop that adaptively digs deeper when evidence is thin — real agency, not a fixed chain
 - **Provider-Agnostic**: Swap OpenAI ↔ Anthropic (Claude) with one env var — benchmark GPT vs Claude on the same eval harness
+- **Hybrid RAG + Reranking**: BM25 (keyword) + FAISS (dense) retrieval, fused and reranked by a local cross-encoder (FlashRank) for sharply better, grounded, cited chunks
 - **Free Local Embeddings**: RAG uses a local FastEmbed (ONNX) model by default — no embeddings API key, no per-vector cost
 - **Typed, Validated I/O**: Agents emit Pydantic-validated structured output (`ResearchPlan`, `FactSet`) — no fragile JSON parsing
 - **Evaluation Harness**: Scores every report for citation grounding, structure, source grounding, faithfulness, and topic relevance — with a reproducible before/after scorecard
@@ -136,8 +137,8 @@ measure a real before/after when you change prompts, models, or retrieval.
 | Agent Orchestration | LangGraph (stateful graph + reflection loop) |
 | LLM               | OpenAI (GPT-4o-mini) or Anthropic (Claude) — configurable |
 | Embeddings        | Local FastEmbed (BAAI/bge-small-en-v1.5), free; OpenAI optional |
-| Vector Store      | FAISS                               |
-| Web Search        | DuckDuckGo                          |
+| Retrieval         | Hybrid BM25 + FAISS, reranked with FlashRank (local cross-encoder) |
+| Web Search        | ddgs (direct, with retry/backoff)   |
 | PDF Parsing       | PyPDF                               |
 | Validation        | Pydantic v2 (structured output)     |
 | Evaluation        | Custom harness (deterministic + LLM-judge) |
@@ -150,6 +151,10 @@ measure a real before/after when you change prompts, models, or retrieval.
 ```
 av-research-agent/
 ├── app.py                   # Main Streamlit application
+├── api/
+│   └── main.py              # FastAPI REST backend (/health, /research)
+├── Dockerfile               # Container image for the API
+├── .dockerignore
 ├── agents/
 │   ├── graph.py             # LangGraph agentic pipeline with reflection loop
 │   ├── triage.py            # Topic decomposition agent (structured output)
@@ -160,13 +165,15 @@ av-research-agent/
 │   └── models.py            # Pydantic data contracts (ResearchPlan, Fact, FactSet)
 ├── utils/
 │   ├── llm.py               # Provider-agnostic LLM + embedding factories
+│   ├── web_search.py        # Robust ddgs web search (retry + fallback)
 │   ├── pdf_loader.py        # PDF ingestion and chunking
-│   ├── rag_engine.py        # FAISS-based RAG engine (local embeddings)
+│   ├── rag_engine.py        # Hybrid RAG (BM25 + dense) with FlashRank rerank
 │   └── observability.py     # Token / cost / latency tracking + LangSmith
 ├── evals/
 │   ├── dataset.py           # Golden evaluation cases + report fixtures
 │   ├── metrics.py           # Deterministic + LLM-as-judge metrics
 │   ├── run_eval.py          # Eval runner → scorecard
+│   ├── benchmark.py         # Compare providers/models on the eval
 │   └── results/             # Generated scorecards (JSON + Markdown)
 ├── .env.example
 ├── requirements.txt
@@ -187,6 +194,51 @@ The project treats quality as something you **measure**, not vibe-check.
 | `topic_relevance` | LLM-as-judge | Report actually answers the requested topic |
 
 Deterministic metrics run offline with no API key; LLM-as-judge metrics run
-when `OPENAI_API_KEY` is set. Each run writes a timestamped scorecard so you
+when a provider API key is set. Each run writes a timestamped scorecard so you
 can compare before/after any change.
+
+### Provider benchmark
+
+Compare GPT vs Claude (or any models) on the same eval:
+
+```bash
+python -m evals.benchmark --combos anthropic:claude-haiku-5-5 openai:gpt-4o-mini
+```
+
+Each combo runs the live eval and the scores are tabulated side by side. (Each
+combo spends API credits for its provider.)
+
+## REST API
+
+The same pipeline is exposed as a FastAPI service:
+
+```bash
+uvicorn api.main:app --reload --port 8000
+# GET  http://localhost:8000/health
+# POST http://localhost:8000/research   {"topic": "...", "max_iterations": 2}
+# Interactive docs at http://localhost:8000/docs
+```
+
+`POST /research` returns the report, collected facts, queries run, the agent
+decision log, and token usage as JSON.
+
+## Docker & Deployment
+
+```bash
+docker build -t av-research-agent .
+docker run -p 8000:8000 --env-file .env av-research-agent
+```
+
+The image runs the FastAPI backend with a container healthcheck on `/health`.
+It deploys as-is to any container host (Render, Railway, Fly.io, Cloud Run) —
+set the same `.env` variables as secrets there.
+
+## Known limitations
+
+- **Web search throttling:** DuckDuckGo (`ddgs`) rate-limits bursts of queries;
+  the agent retries and then degrades gracefully (falls back to model
+  knowledge). For reliable fresh grounding, swap in a keyed search API
+  (Tavily, Serper, Brave) behind `utils/web_search.py`.
+- Cost tracking reports token counts for all providers but dollar cost only for
+  OpenAI (the callback is OpenAI-specific).
 

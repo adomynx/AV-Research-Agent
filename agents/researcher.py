@@ -8,10 +8,10 @@ than an untyped dict.
 """
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.tools import DuckDuckGoSearchResults
 
 from schemas.models import Fact, FactSet, Relevance
 from utils.llm import get_chat_model
+from utils.web_search import web_search, format_results
 
 SYSTEM_PROMPT = """You are an autonomous driving research analyst.
 Given search results and/or paper excerpts about a specific query, extract
@@ -46,7 +46,6 @@ class ResearchAgent:
     def __init__(self, rag_engine=None):
         llm = get_chat_model(temperature=0.2)
         self.rag_engine = rag_engine
-        self.search_tool = DuckDuckGoSearchResults(max_results=5)
 
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", SYSTEM_PROMPT),
@@ -64,11 +63,7 @@ Extract the key facts:"""),
 
     def _web_search(self, query: str) -> str:
         """Execute web search and return results as text."""
-        try:
-            return str(self.search_tool.invoke(query))
-        except Exception as e:  # noqa: BLE001
-            print(f"[ResearchAgent] Web search error: {e}")
-            return "No web results available."
+        return format_results(web_search(query, max_results=5))
 
     def _rag_search(self, query: str) -> str:
         """Query uploaded papers via RAG engine."""
