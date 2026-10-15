@@ -1,5 +1,7 @@
 # 🚗 AV Research Agent
 
+![CI](https://github.com/adomynx/AV-Research-Agent/actions/workflows/ci.yml/badge.svg)
+
 A multi-agent research pipeline built with **LangChain** and **Streamlit** for automated literature review and technical analysis in autonomous driving and perception systems.
 
 ## Overview
@@ -138,7 +140,7 @@ measure a real before/after when you change prompts, models, or retrieval.
 | LLM               | OpenAI (GPT-4o-mini) or Anthropic (Claude) — configurable |
 | Embeddings        | Local FastEmbed (BAAI/bge-small-en-v1.5), free; OpenAI optional |
 | Retrieval         | Hybrid BM25 + FAISS, reranked with FlashRank (local cross-encoder) |
-| Web Search        | ddgs (direct, with retry/backoff)   |
+| Web Search        | Tavily (keyed) with ddgs fallback   |
 | PDF Parsing       | PyPDF                               |
 | Validation        | Pydantic v2 (structured output)     |
 | Evaluation        | Custom harness (deterministic + LLM-judge) |
@@ -208,6 +210,16 @@ python -m evals.benchmark --combos anthropic:claude-haiku-5-5 openai:gpt-4o-mini
 Each combo runs the live eval and the scores are tabulated side by side. (Each
 combo spends API credits for its provider.)
 
+## Testing & CI
+
+```bash
+pytest          # unit tests for metrics, schemas, provider utils, dataset
+ruff check .    # lint
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs lint + tests + the offline
+(deterministic, no-API-key) eval on every push and PR.
+
 ## REST API
 
 The same pipeline is exposed as a FastAPI service:
@@ -233,12 +245,21 @@ The image runs the FastAPI backend with a container healthcheck on `/health`.
 It deploys as-is to any container host (Render, Railway, Fly.io, Cloud Run) —
 set the same `.env` variables as secrets there.
 
+### Deploy the live app (Streamlit UI)
+
+**Render (blueprint included):** New + → Blueprint → connect this repo. Render
+reads `render.yaml`, builds, and gives you a public URL. Set `ANTHROPIC_API_KEY`
+(and optionally `TAVILY_API_KEY`) as secrets in the dashboard.
+
+**Streamlit Community Cloud (fastest):** push to GitHub → share.streamlit.io →
+pick the repo and `app.py` → add `ANTHROPIC_API_KEY` under **Secrets**. Free.
+
 ## Known limitations
 
-- **Web search throttling:** DuckDuckGo (`ddgs`) rate-limits bursts of queries;
-  the agent retries and then degrades gracefully (falls back to model
-  knowledge). For reliable fresh grounding, swap in a keyed search API
-  (Tavily, Serper, Brave) behind `utils/web_search.py`.
+- **Web search throttling:** the default DuckDuckGo (`ddgs`) backend
+  rate-limits bursts of queries. Set `TAVILY_API_KEY` (free tier) to use
+  Tavily instead — reliable, LLM-oriented search; the agent falls back to
+  `ddgs`, then to model knowledge, so it never crashes.
 - Cost tracking reports token counts for all providers but dollar cost only for
   OpenAI (the callback is OpenAI-specific).
 

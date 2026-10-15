@@ -1,0 +1,10 @@
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = ["E", "F"]
+# E501: long lines (prompt strings); E402: intentional late imports after load_dotenv().
+ignore = ["E501", "E402"]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports
